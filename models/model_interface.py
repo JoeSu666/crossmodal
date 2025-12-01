@@ -23,6 +23,10 @@ class ModelInterface(pl.LightningModule):
         scheduler: str = "cosine",  # "cosine", "step", or "none"
         max_epochs: int = 100,
         class_names: list = None,
+        he_retention_loss_weight=0.1,
+        ihc_retention_loss_weight=0.1,
+        he_ce_loss_weight=1.0,
+        ihc_ce_loss_weight=1.0,
     ):
         """
         Args:
@@ -45,7 +49,7 @@ class ModelInterface(pl.LightningModule):
         self.weight_decay = weight_decay
         self.scheduler = scheduler
         self.max_epochs = max_epochs
-        self.loss = CMDLoss()
+        self.loss = CMDLoss(he_retention_loss_weight, ihc_retention_loss_weight, he_ce_loss_weight, ihc_ce_loss_weight)
         self.class_names = class_names or [f"Class_{i}" for i in range(num_classes)]
         
         # Build the model using your model builder

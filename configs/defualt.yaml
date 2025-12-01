@@ -1,0 +1,35 @@
+data:
+  data_dir: /path/to/features
+  split_dir: /path/to/splits
+  dataset_class: HER2
+  batch_size: 8
+  num_workers: 4
+  random_seed: 42
+model:
+  model_name: cmd_transmil
+  num_classes: 4
+  learning_rate: 1e-4
+  weight_decay: 1e-4
+  scheduler: cosine  # or "step" / "none"
+  he_retention_loss_weight: 0.1
+  ihc_retention_loss_weight: 0.1
+  he_ce_loss_weight: 1.0
+  ihc_ce_loss_weight: 1.0
+training:
+  max_epochs: 50
+  monitor: val/acc
+  mode: max
+  save_top_k: 1
+  save_last: True
+  patience: 5
+  accelerator: gpu
+  devices: [0]
+  precision: 16
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+logging:
+  use_wandb: false
+  project_name: crossmodal
+  log_dir: ./logs
+  log_every_n_steps: 10
+class_names: [0, 1, 2, 3]

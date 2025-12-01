@@ -124,7 +124,11 @@ def train_single_fold(config, model_name, fold, tag, output_dir='./outputs'):
         weight_decay=config['model']['weight_decay'],
         scheduler=config['model']['scheduler'],
         max_epochs=config['training']['max_epochs'],
-        class_names=config.get('class_names')
+        class_names=config.get('class_names'),
+        he_retention_loss_weight=config['model']['he_retention_loss_weight'],
+        ihc_retention_loss_weight=config['model']['ihc_retention_loss_weight'],
+        he_ce_loss_weight=config['model']['he_ce_loss_weight'],
+        ihc_ce_loss_weight=config['model']['ihc_ce_loss_weight']
     )
 
     # Print model info (only for first fold to avoid repetition)
