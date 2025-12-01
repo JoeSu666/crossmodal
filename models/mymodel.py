@@ -5,6 +5,9 @@ import numpy as np
 from nystrom_attention import NystromAttention
 
 from torch.distributions import Normal
+from typing import Tuple, Type
+
+LayerType = Type[nn.Module]
 
 # ===========================================
 #  TransMIL
@@ -119,7 +122,7 @@ class FeatureTransMILHybrid(FeatureTransMIL):
 
         self.retention_embed = nn.Linear(embed_dim, embed_dim)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
-        self.retention_gene_embed = nn.Embedding(num_tokens + 1, embed_dim)
+        self.retention_pos_embed = nn.Embedding(num_tokens + 1, embed_dim)
 
         self.retention_blocks = nn.ModuleList(
             [TransLayer(dim=embed_dim) for _ in range(retention_decoder_depth)]
@@ -365,7 +368,7 @@ class CMD(nn.Module):
         he_retention_target = he_emb[:, 1:, :]
 
         he_logits = self.he_classifier(he_cls) #[B, n_classes]
-        he_results_dict = {'logits': he_logits, 'Y_prob': F.softmax(he_logits, dim = 1), 'Y_hat': torch.argmax(he_logits, dim=1)}
+        he_results_dict = {'logits': he_logits, 'probs': F.softmax(he_logits, dim = 1), 'preds': torch.argmax(he_logits, dim=1)}
 
         ihc_emb = self.ihc_encoder.forward_encoder(ihc_emb)
         ihc_cls = ihc_emb[:, 0, :]
@@ -375,7 +378,7 @@ class CMD(nn.Module):
         ihc_retention_target = ihc_emb[:, 1:, :]
 
         ihc_logits = self.ihc_classifier(ihc_cls) #[B, n_classes]
-        ihc_results_dict = {'logits': ihc_logits, 'Y_prob': F.softmax(ihc_logits, dim = 1), 'Y_hat': torch.argmax(ihc_logits, dim=1)}
+        ihc_results_dict = {'logits': ihc_logits, 'probs': F.softmax(ihc_logits, dim = 1), 'preds': torch.argmax(ihc_logits, dim=1)}
 
         # rna_emb = self.rna_encoder.forward_encoder(rna_emb)
         # rna_alignment_emb, rna_retention_emb, rna_mask = (
