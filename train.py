@@ -16,6 +16,7 @@ from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 import data.datasets as datasets
 from data.datasets import DataModule
 from models.model_interface import ModelInterface
+from utils.utils import get_attribute
 
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
@@ -25,14 +26,6 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config
-
-
-def get_attribute(module, name):
-    """Simple getattr wrapper with a clear error message."""
-    try:
-        return getattr(module, name)
-    except AttributeError as exc:
-        raise ValueError(f"{name} is not available in the provided module.") from exc
 
 
 def create_experiment_name(config, model_name, ckpt_path=None, fold=None, tag=None):
