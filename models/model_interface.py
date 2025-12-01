@@ -23,6 +23,7 @@ class ModelInterface(pl.LightningModule):
         scheduler: str = "cosine",  # "cosine", "step", or "none"
         max_epochs: int = 100,
         class_names: list = None,
+        model_name: str = "CMD",
     ):
         """
         Args:
@@ -47,11 +48,10 @@ class ModelInterface(pl.LightningModule):
         self.max_epochs = max_epochs
         self.loss = CMDLoss()
         self.class_names = class_names or [f"Class_{i}" for i in range(num_classes)]
-        
+        self.model_name = model_name
+
         # Build the model using your model builder
-        self.model = self._build_mymodel(
-            model_name, num_classes
-        )
+        self.model = self._build_mymodel(num_classes)
         
         # Initialize metrics
         self.train_acc = Accuracy(task="multiclass", num_classes=num_classes, average='weighted')
@@ -76,7 +76,7 @@ class ModelInterface(pl.LightningModule):
         # Store test predictions for analysis
         self.test_step_outputs = []
     
-    def _build_mymodel(self, model_name, num_classes):
+    def _build_mymodel(self, num_classes):
         """Build linear probe using your model builder"""
         from models.mymodel import CMD
         
@@ -86,25 +86,41 @@ class ModelInterface(pl.LightningModule):
 
         return model
         
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, he_emb, ihc_emb):
+        return self.model(he_emb, ihc_emb)
     
     def training_step(self, batch, batch_idx):
-        images, labels = batch
-        he_retention_emb,he_retention_target,he_mask,he_results_dict, \
-        ihc_retention_emb,ihc_retention_target,ihc_mask,ihc_results_dict = self(images)
+        (he_emb, ihc_emb), labels = batch
+        (
+            he_retention_emb,
+            he_retention_target,
+            he_mask,
+            he_results_dict,
+            ihc_retention_emb,
+            ihc_retention_target,
+            ihc_mask,
+            ihc_results_dict,
+        ) = self(he_emb, ihc_emb)
 
-        loss = self.loss(he_retention_emb,
-                         he_retention_target,
-                         he_mask,
-                         he_results_dict,
-                         ihc_retention_emb,
-                         ihc_retention_target,
-                         ihc_mask,
-                         ihc_results_dict,
-                         labels)
-        
-        # Calculate metrics
+        (
+            loss,
+            he_retention_loss,
+            ihc_retention_loss,
+            he_ce_loss,
+            ihc_ce_loss,
+        ) = self.loss(
+            he_retention_emb,
+            he_retention_target,
+            he_mask,
+            he_results_dict,
+            ihc_retention_emb,
+            ihc_retention_target,
+            ihc_mask,
+            ihc_results_dict,
+            labels,
+        )
+
+        # Calculate metrics on student modality
         preds = he_results_dict["preds"]
         probs = he_results_dict["probs"]
         
@@ -114,6 +130,10 @@ class ModelInterface(pl.LightningModule):
         
         # Log metrics
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('train/he_retention_loss', he_retention_loss, on_step=True, on_epoch=True)
+        self.log('train/ihc_retention_loss', ihc_retention_loss, on_step=True, on_epoch=True)
+        self.log('train/he_ce_loss', he_ce_loss, on_step=True, on_epoch=True)
+        self.log('train/ihc_ce_loss', ihc_ce_loss, on_step=True, on_epoch=True)
         self.log('train/acc', self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log('train/macf1', self.train_macro_f1, on_step=False, on_epoch=True)
         self.log('train/macauc', self.train_auc, on_step=False, on_epoch=True)
