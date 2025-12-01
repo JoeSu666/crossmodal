@@ -66,7 +66,7 @@ class HER2(BaseHistoDataset):
         self.fold = fold
 
         # Define class names (2 classes)
-        self.class_names = ["negative", "positive"]
+        self.class_names = [0, 1, 2, 3]
         self.class_to_idx = {class_name: idx for idx, class_name in enumerate(self.class_names)}
         self.num_classes = len(self.class_names)
 
@@ -87,8 +87,6 @@ class HER2(BaseHistoDataset):
 
         return tuple(names)
 
-    def _encode_labels(self, labels: List[str]) -> List[int]:
-        return [0 if label == "negative" else 1 for label in labels]
 
     def _load_dataset(self):
         """Load dataset based on split."""
@@ -99,7 +97,6 @@ class HER2(BaseHistoDataset):
         samplelist = splitdf[self.split].dropna().tolist()
         labellist = splitdf[f"{self.split}_label"].dropna().tolist()
 
-        labellist = self._encode_labels(labellist)
         parsed_samples: List[Tuple[Sequence[str], int]] = []
 
         for raw_sample, label in zip(samplelist, labellist):
