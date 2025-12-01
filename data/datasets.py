@@ -1,47 +1,54 @@
 import os
-import torch
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
+from typing import List, Sequence, Tuple
+
 import pandas as pd
-from PIL import Image
-import random
-from sklearn.model_selection import train_test_split, StratifiedKFold
 import pytorch_lightning as pl
+import torch
+from torch.utils.data import DataLoader, Dataset
 
 class BaseHistoDataset(Dataset):
     """Base dataset class for histopathology image datasets."""
-    
-    def __init__(self, root_dir, split='train', transform=None):
+
+    def __init__(self, root_dir, split="train", transform=None):
         self.root_dir = root_dir
         self.split = split
         self.transform = transform
-        
+
         # These should be set by child classes
-        self.class_names = []
+        self.class_names: List[str] = []
         self.num_classes = 0
         self.class_to_idx = {}
-        self.samples = []
-    
+        self.samples: List[Tuple[Sequence[str], int]] = []
+
     def __len__(self):
         return len(self.samples)
-    
-    def __getitem__(self, idx):
-        img_path, label = self.samples[idx]
-        
-        # Load image
+
+    def _load_tensor(self, tensor_path: str) -> torch.Tensor:
         try:
-            image = torch.load(img_path)
-        except Exception as e:
-            raise RuntimeError(f"Error loading image {img_path}: {e}")
-        
-        # image = image.float()
-        # image = image.permute(0, 3, 1, 2)  # Convert to CxHxW format
-        # Apply transforms
+            return torch.load(tensor_path)
+        except Exception as exc:
+            raise RuntimeError(f"Error loading tensor {tensor_path}: {exc}") from exc
+
+    def __getitem__(self, idx):
+        file_paths, label = self.samples[idx]
+
+        if isinstance(file_paths, (list, tuple)) and len(file_paths) == 2:
+            he_path, ihc_path = file_paths
+            he_tensor = self._load_tensor(he_path)
+            ihc_tensor = self._load_tensor(ihc_path)
+
+            if self.transform:
+                he_tensor = self.transform(he_tensor)
+                ihc_tensor = self.transform(ihc_tensor)
+
+            return (he_tensor, ihc_tensor), label
+
+        he_tensor = self._load_tensor(file_paths)
         if self.transform:
-            image = self.transform(image)
-        
-        return image, label
-    
+            he_tensor = self.transform(he_tensor)
+
+        return he_tensor, label
+
     def get_class_distribution(self):
         """Get the distribution of classes in the current split"""
         class_counts = {}
@@ -53,42 +60,85 @@ class BaseHistoDataset(Dataset):
 class HER2(BaseHistoDataset):
     """HER2 Dataset for histopathology image classification."""
 
-    def __init__(self, root_dir, split='train', splitdir=None, fold=0, transform=None):
+    def __init__(self, root_dir, split="train", splitdir=None, fold=0, transform=None):
         super().__init__(root_dir, split, transform)
         self.splitdir = splitdir
         self.fold = fold
 
         # Define class names (2 classes)
-        self.class_names = ['negative', 'positive']
+        self.class_names = ["negative", "positive"]
         self.class_to_idx = {class_name: idx for idx, class_name in enumerate(self.class_names)}
         self.num_classes = len(self.class_names)
-        
+
         # Load dataset
         self.samples = self._load_dataset()
-        
+
+    def _split_sample_names(self, raw_entry: str) -> Tuple[str, ...]:
+        """Split a raw sample string into individual filenames.
+
+        Accepts comma- or whitespace-separated names to make the split file
+        format flexible.
+        """
+
+        if "," in raw_entry:
+            names = [name.strip() for name in raw_entry.split(",") if name.strip()]
+        else:
+            names = [name.strip() for name in raw_entry.split() if name.strip()]
+
+        return tuple(names)
+
+    def _encode_labels(self, labels: List[str]) -> List[int]:
+        return [0 if label == "negative" else 1 for label in labels]
+
     def _load_dataset(self):
-        """Load dataset based on split"""
-        splitname = os.path.join(self.splitdir, f'splits_{self.fold}.csv')
-        splitdf = pd.read_csv(splitname, dtype={f'{self.split}': str})
+        """Load dataset based on split."""
+
+        splitname = os.path.join(self.splitdir, f"splits_{self.fold}.csv")
+        splitdf = pd.read_csv(splitname, dtype={f"{self.split}": str})
+
         samplelist = splitdf[self.split].dropna().tolist()
-        labellist = splitdf[f'{self.split}_label'].dropna().tolist()
+        labellist = splitdf[f"{self.split}_label"].dropna().tolist()
 
-        samplelist = [os.path.join(self.root_dir, sample+'.pt') for sample in samplelist]
-        labellist = [0 if label == 'negative' else 1 for label in labellist]
+        labellist = self._encode_labels(labellist)
+        parsed_samples: List[Tuple[Sequence[str], int]] = []
 
-        return list(zip(samplelist, labellist))
+        for raw_sample, label in zip(samplelist, labellist):
+            names = self._split_sample_names(raw_sample)
+
+            if self.split == "train":
+                if len(names) != 2:
+                    raise ValueError(
+                        "Training split entries must contain two filenames (HE and IHC). "
+                        "Use a comma or whitespace to separate them."
+                    )
+                he_name, ihc_name = names
+                he_path = os.path.join(self.root_dir, f"{he_name}.pt")
+                ihc_path = os.path.join(self.root_dir, f"{ihc_name}.pt")
+                parsed_samples.append(((he_path, ihc_path), label))
+            else:
+                if len(names) != 1:
+                    raise ValueError(
+                        f"{self.split} split entries must contain exactly one HE filename."
+                    )
+                he_path = os.path.join(self.root_dir, f"{names[0]}.pt")
+                parsed_samples.append((he_path, label))
+
+        return parsed_samples
 
     def get_weights(self):
         # get weights for weight random sampler (training only)
-        splitname = os.path.join(self.splitdir, f'splits_{self.fold}.csv')
-        splitdf = pd.read_csv(splitname, dtype={f'{self.split}': str})
-        traindf = splitdf[['train', 'train_label']].dropna().reset_index(drop=True)
-        traindf.set_index('train')
+        if self.split != "train":
+            raise RuntimeError("Class weights are only defined for the training split.")
 
-        N = len(traindf)
-        w_per_cls = {'positive': N/(traindf['train_label']=='positive').sum(), 'negative': N/(traindf['train_label']=='negative').sum()}
+        label_counts = {}
+        for _, label in self.samples:
+            label_counts[label] = label_counts.get(label, 0) + 1
 
-        weights = [w_per_cls[traindf.loc[name, 'train_label']] for name in traindf.index.tolist()]
+        total = len(self.samples)
+        weights = []
+        for _, label in self.samples:
+            class_weight = total / label_counts[label]
+            weights.append(class_weight)
 
         return torch.DoubleTensor(weights)
 
